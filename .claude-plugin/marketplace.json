@@ -1,0 +1,14 @@
+{
+  "name": "salesforce-ssot",
+  "owner": {
+    "name": "Barak Vanunu"
+  },
+  "description": "Salesforce governance skills for Claude Code: search before you build.",
+  "plugins": [
+    {
+      "name": "salesforce-ssot",
+      "source": "./",
+      "description": "Search before you build: a Single Source of Truth gate for Salesforce orgs."
+    }
+  ]
+}

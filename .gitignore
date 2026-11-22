@@ -1,0 +1,5 @@
+# Never commit an org snapshot to this repo
+ssot-data/
+__pycache__/
+*.pyc
+.DS_Store
