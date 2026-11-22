@@ -33,7 +33,7 @@ Why a local snapshot instead of live queries through an MCP server? One fuzzy pa
 ## Requirements
 
 - [Claude Code](https://code.claude.com), or another agent that can run shell commands
-- Python 3.8+ (standard library only)
+- Python 3.9+ (standard library only)
 - [Salesforce CLI](https://developer.salesforce.com/tools/salesforcecli) (`sf`), authenticated to your org (`sf org login web --alias prod`)
 - A user with **View All Data** and **View Setup and Configuration** (plus API access). Counts respect sharing, so a user without View All Data gets undercounts. Best practice: a dedicated read-only user, not a personal admin login.
 

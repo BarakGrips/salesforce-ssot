@@ -50,13 +50,19 @@ class DataDir(unittest.TestCase):
             deep = os.path.join(tmp, "a", "b")
             os.makedirs(deep)
             os.chdir(deep)
-            self.assertEqual(C.data_dir(), os.path.join(tmp, "ssot-data"))
+            try:
+                self.assertEqual(C.data_dir(), os.path.join(tmp, "ssot-data"))
+            finally:
+                os.chdir(self.cwd)   # Windows can't delete the current folder
 
     def test_default_is_current_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = os.path.realpath(tmp)
             os.chdir(tmp)
-            self.assertEqual(C.data_dir(), os.path.join(tmp, "ssot-data"))
+            try:
+                self.assertEqual(C.data_dir(), os.path.join(tmp, "ssot-data"))
+            finally:
+                os.chdir(self.cwd)
 
     def test_relative_env_resolves_against_project(self):
         with tempfile.TemporaryDirectory() as tmp:

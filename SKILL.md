@@ -2,7 +2,7 @@
 name: salesforce-ssot
 description: "Single Source of Truth gate for Salesforce orgs. Before a new field, object, flow or other automation, validation rule, permission set, picklist value, alert, report or integration mapping is designed or built, it searches existing metadata and data for something that already serves the need, then decides Reuse / Derive / Extend / Repurpose / Create with evidence. Use at the start of Salesforce design and build work even when SSOT is not mentioned, and for questions like 'do we already have...', 'is there a field for...', 'where is X used' or 'can I delete or repurpose X'. Skip it for debugging an existing error that needs no new component."
 license: MIT
-compatibility: "Needs a shell, Python 3.8+ (stdlib only) and the Salesforce CLI (sf) authenticated to the target org. Built for Claude Code; works in any agent that can run scripts."
+compatibility: "Needs a shell, Python 3.9+ (stdlib only) and the Salesforce CLI (sf) authenticated to the target org. Built for Claude Code; works in any agent that can run scripts."
 metadata:
   version: "0.9.0"
 ---

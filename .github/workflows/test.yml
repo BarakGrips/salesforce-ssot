@@ -10,10 +10,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.8", "3.12"]
+        python: ["3.9", "3.13"]
         exclude:
-          - os: macos-latest
-            python: "3.8"
+          - os: ubuntu-latest   # current Ubuntu runners no longer ship 3.9
+            python: "3.9"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
