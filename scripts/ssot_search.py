@@ -270,7 +270,7 @@ def search_inventory(concepts, obj, limit, include_managed):
                     objless = True   # Apex classes, autolaunched flows, perm sets: keep them
                 elif obj.lower() not in (val, (r.get("trigger_object_label") or "").lower()):
                     continue
-            managed = bool(r.get("namespace")) and name != "config.csv"
+            managed = bool(r.get("namespace"))
             if managed and not include_managed:
                 continue
             s = score(words(" ".join(str(v) for v in r.values())), concepts)
@@ -298,9 +298,11 @@ def search_markdown(concepts, limit):
     for r in roots:
         files += glob.glob(os.path.join(r, "**", "*.md"), recursive=True)
     cache_prefix = os.path.abspath(P["cache"]) + os.sep
+    changes_prefix = os.path.abspath(os.path.join(P["data"], "changes")) + os.sep
     skip = {os.path.abspath(REGISTRY), os.path.abspath(os.path.join(P["data"], "decisions.md"))}
     files = [os.path.abspath(f) for f in files]
-    files = [f for f in files if not f.startswith(cache_prefix) and f not in skip]
+    files = [f for f in files if not f.startswith(cache_prefix) and not f.startswith(changes_prefix)
+             and f not in skip]
     results = []
     for f in sorted(set(files)):
         try:

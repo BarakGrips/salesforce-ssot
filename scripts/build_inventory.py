@@ -318,10 +318,12 @@ def build_access(org, warnings):
                      "object": "", "namespace": r.get("NamespacePrefix"),
                      "detail": "%s %s" % (r.get("Type") or "", r.get("Description") or "")})
     for r in safe_query("PermissionSetGroup", org,
-                        "SELECT DeveloperName, MasterLabel, Description, Status FROM PermissionSetGroup",
+                        "SELECT DeveloperName, MasterLabel, Description, Status, NamespacePrefix "
+                        "FROM PermissionSetGroup",
                         warnings=warnings):
         rows.append({"kind": "permission_set_group", "name": r["DeveloperName"], "label": r.get("MasterLabel"),
-                     "object": "", "namespace": "", "detail": "%s %s" % (r.get("Status"), r.get("Description") or "")})
+                     "object": "", "namespace": r.get("NamespacePrefix") or "",
+                     "detail": "%s %s" % (r.get("Status"), r.get("Description") or "")})
     for r in safe_query("Profile", org, "SELECT Name, UserLicense.Name FROM Profile", warnings=warnings):
         rows.append({"kind": "profile", "name": r["Name"], "label": r["Name"], "object": "",
                      "namespace": "", "detail": get(r, "UserLicense.Name")})
@@ -332,10 +334,11 @@ def build_access(org, warnings):
                      "name": r.get("DeveloperName"), "label": r.get("Name"), "object": "",
                      "namespace": "", "detail": ""})
     for r in safe_query("RecordType", org,
-                        "SELECT SobjectType, DeveloperName, Name, IsActive, Description FROM RecordType",
+                        "SELECT SobjectType, DeveloperName, Name, IsActive, Description, NamespacePrefix "
+                        "FROM RecordType",
                         warnings=warnings):
         rows.append({"kind": "record_type", "name": r["DeveloperName"], "label": r.get("Name"),
-                     "object": r.get("SobjectType"), "namespace": "",
+                     "object": r.get("SobjectType"), "namespace": r.get("NamespacePrefix") or "",
                      "detail": "%s %s" % ("active" if r.get("IsActive") else "INACTIVE", r.get("Description") or "")})
     for r in safe_query("User(integration)", org,
                         # Internal automation only: never portal, community or guest users.
@@ -352,10 +355,10 @@ def build_access(org, warnings):
 def build_config(org, warnings):
     rows = []
     for r in safe_query("GlobalValueSet", org,
-                        "SELECT DeveloperName, MasterLabel, Description FROM GlobalValueSet",
+                        "SELECT DeveloperName, MasterLabel, Description, NamespacePrefix FROM GlobalValueSet",
                         tooling=True, warnings=warnings):
         rows.append({"kind": "global_value_set", "name": r["DeveloperName"], "label": r.get("MasterLabel"),
-                     "detail": r.get("Description")})
+                     "namespace": r.get("NamespacePrefix") or "", "detail": r.get("Description")})
     for r in safe_query("ExternalString", org,
                         "SELECT Name, Value, Category, NamespacePrefix FROM ExternalString WHERE NamespacePrefix = null",
                         tooling=True, warnings=warnings):
@@ -365,7 +368,7 @@ def build_config(org, warnings):
                         "SELECT DeveloperName, MasterLabel, Endpoint, NamespacePrefix FROM NamedCredential",
                         warnings=warnings):
         rows.append({"kind": "named_credential", "name": r["DeveloperName"], "label": r.get("MasterLabel"),
-                     "detail": r.get("Endpoint")})
+                     "namespace": r.get("NamespacePrefix") or "", "detail": r.get("Endpoint")})
     for r in safe_query("InstalledSubscriberPackage", org,
                         "SELECT SubscriberPackage.Name, SubscriberPackage.NamespacePrefix, "
                         "SubscriberPackageVersion.Name FROM InstalledSubscriberPackage",
@@ -451,12 +454,42 @@ def retrieve_cache(org, cache_dir, objects, warnings):
     return count
 
 
+# ---------------------------------------------------------------- staging and previous snapshot
+def promote(out_dir, stage, org):
+    """After a successful build: current -> previous/ (same org only), staged -> current.
+
+    The new CSVs are written to a staging folder first, so a crashed or interrupted build
+    never touches the live inventory or its baseline."""
+    prev = os.path.join(out_dir, "previous")
+    meta_path = os.path.join(out_dir, "_meta.json")
+    try:
+        same_org = os.path.exists(meta_path) and read_json(meta_path).get("org") == org
+    except (OSError, ValueError):
+        same_org = False
+    if os.path.isdir(prev):
+        shutil.rmtree(prev)
+    if same_org:
+        os.makedirs(prev)
+    for fn in os.listdir(out_dir):
+        if fn.endswith(".csv") or fn == "_meta.json":
+            src = os.path.join(out_dir, fn)
+            if same_org:
+                os.replace(src, os.path.join(prev, fn))
+            else:
+                os.remove(src)   # a different org's snapshot is no baseline
+    for fn in os.listdir(stage):
+        os.replace(os.path.join(stage, fn), os.path.join(out_dir, fn))
+    shutil.rmtree(stage)
+
+
 # ---------------------------------------------------------------- init
 GITIGNORE = """# Generated by build_inventory.py. The snapshot is a copy of your org's metadata:
 # keep it out of git (rebuild it any time). Commit registry.md and decisions.md - they
 # are team knowledge (and describe your business, so keep them in a repo you control).
 inventory/
 cache/
+# Change reports name the users who changed components; commit them only if that is fine for you.
+changes/
 """
 
 
@@ -519,42 +552,53 @@ def main():
             print("  ! " + x)
         return
     os.makedirs(a.out, exist_ok=True)
-    warnings, counts = [], {}
+    stage = os.path.join(a.out, "next")
+    if os.path.isdir(stage):
+        shutil.rmtree(stage)   # leftovers of an interrupted build
+    os.makedirs(stage)
+    warnings, counts, partial = [], {}, []
     started = dt.datetime.now()
     print("SSOT inventory: org=%s out=%s" % (a.org, rel(a.out)))
 
+    def write(name, header, build):
+        """Build one file; remember it as partial if its queries logged warnings."""
+        before = len(warnings)
+        rows = build()
+        if len(warnings) > before:
+            partial.append(name)
+        return write_csv(stage, name, header, rows)
+
     obj_rows, id_map, describe = build_objects(a.org, warnings)
-    counts["objects"] = write_csv(a.out, "objects.csv",
+    if warnings:
+        partial.append("objects.csv")
+    counts["objects"] = write_csv(stage, "objects.csv",
                                   ["api_name", "label", "kind", "namespace", "managed", "description"], obj_rows)
-    fields = build_fields(a.org, describe, id_map, warnings)
-    counts["fields"] = write_csv(a.out, "fields.csv",
-                                 ["object", "api_name", "label", "type", "custom", "namespace", "reference_to",
-                                  "formula", "help_text", "description", "picklist_values", "default_value",
-                                  "filterable", "external_id",
-                                  "unique", "created", "last_modified"], fields)
-    counts["flows"] = write_csv(a.out, "flows.csv",
-                                ["api_name", "label", "active", "process_type", "trigger_type", "trigger_object",
-                                 "record_trigger", "description", "namespace", "last_modified",
-                                 "last_modified_by", "trigger_object_label"], build_flows(a.org, id_map, warnings))
-    counts["validation_rules"] = write_csv(a.out, "validation_rules.csv",
-                                           ["object", "name", "active", "description", "error_field",
-                                            "error_message", "namespace", "last_modified"],
-                                           build_validation_rules(a.org, warnings))
-    counts["apex"] = write_csv(a.out, "apex.csv", ["kind", "name", "object", "status", "namespace",
-                                                    "last_modified"], build_apex(a.org, id_map, warnings))
-    counts["other_automation"] = write_csv(a.out, "other_automation.csv",
-                                           ["kind", "name", "object", "status", "namespace", "detail"],
-                                           build_other_automation(a.org, id_map, warnings))
-    counts["email"] = write_csv(a.out, "email.csv", ["kind", "name", "object", "folder", "active", "namespace",
-                                                      "detail"],
-                                build_email(a.org, id_map, warnings))
-    counts["access"] = write_csv(a.out, "access.csv", ["kind", "name", "label", "object", "namespace", "detail"],
-                                 build_access(a.org, warnings))
-    counts["config"] = write_csv(a.out, "config.csv", ["kind", "name", "label", "detail"],
-                                 build_config(a.org, warnings))
-    counts["reports"] = write_csv(a.out, "reports.csv", ["kind", "name", "label", "folder", "namespace", "detail",
-                                                          "last_run"],
-                                  build_reports(a.org, warnings))
+    counts["fields"] = write("fields.csv",
+                             ["object", "api_name", "label", "type", "custom", "namespace", "reference_to",
+                              "formula", "help_text", "description", "picklist_values", "default_value",
+                              "filterable", "external_id", "unique", "created", "last_modified"],
+                             lambda: build_fields(a.org, describe, id_map, warnings))
+    counts["flows"] = write("flows.csv",
+                            ["api_name", "label", "active", "process_type", "trigger_type", "trigger_object",
+                             "record_trigger", "description", "namespace", "last_modified",
+                             "last_modified_by", "trigger_object_label"], lambda: build_flows(a.org, id_map, warnings))
+    counts["validation_rules"] = write("validation_rules.csv",
+                                       ["object", "name", "active", "description", "error_field",
+                                        "error_message", "namespace", "last_modified"],
+                                       lambda: build_validation_rules(a.org, warnings))
+    counts["apex"] = write("apex.csv", ["kind", "name", "object", "status", "namespace", "last_modified"],
+                           lambda: build_apex(a.org, id_map, warnings))
+    counts["other_automation"] = write("other_automation.csv",
+                                       ["kind", "name", "object", "status", "namespace", "detail"],
+                                       lambda: build_other_automation(a.org, id_map, warnings))
+    counts["email"] = write("email.csv", ["kind", "name", "object", "folder", "active", "namespace", "detail"],
+                            lambda: build_email(a.org, id_map, warnings))
+    counts["access"] = write("access.csv", ["kind", "name", "label", "object", "namespace", "detail"],
+                             lambda: build_access(a.org, warnings))
+    counts["config"] = write("config.csv", ["kind", "name", "label", "namespace", "detail"],
+                             lambda: build_config(a.org, warnings))
+    counts["reports"] = write("reports.csv", ["kind", "name", "label", "folder", "namespace", "detail", "last_run"],
+                              lambda: build_reports(a.org, warnings))
     cache_warnings, prev_cache_at = [], None
     if not a.skip_retrieve:
         counts["cached_metadata_files"] = retrieve_cache(a.org, a.cache, describe, cache_warnings)
@@ -570,14 +614,27 @@ def main():
     meta = {"built_at": started.isoformat(timespec="seconds"), "org": a.org,
             "duration_sec": int((dt.datetime.now() - started).total_seconds()),
             "counts": counts, "described_objects": describe, "warnings": warnings,
-            "cache_warnings": cache_warnings,
+            "partial_files": sorted(set(partial)), "cache_warnings": cache_warnings,
             "cache_refreshed_at": (started.isoformat(timespec="seconds")
                                    if not a.skip_retrieve and counts.get("cached_metadata_files")
                                    else prev_cache_at)}
-    write_json(os.path.join(a.out, "_meta.json"), meta)
+    write_json(os.path.join(stage, "_meta.json"), meta)
+    promote(a.out, stage, a.org)
     print("done in %ss - %d warning(s)" % (meta["duration_sec"], len(warnings) + len(cache_warnings)))
     for w in warnings + cache_warnings:
         print("  ! " + w)
+    try:
+        import ssot_changes
+        res, why = ssot_changes.analyze(p)
+        if not res:
+            print(why)
+        else:
+            line = ssot_changes.summary_line(res)
+            if ssot_changes.has_changes(res):
+                line += "  (report: %s)" % rel(ssot_changes.save_report(p, res))
+            print(line)
+    except Exception as exc:   # the build itself succeeded; the diff is a bonus
+        print("(change summary skipped: %s)" % exc)
 
 
 if __name__ == "__main__":

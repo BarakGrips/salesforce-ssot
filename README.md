@@ -6,7 +6,7 @@ Every org has the same problem. Someone needs a field, can't find one in 30 seco
 
 AI agents make this faster, not better: an agent that doesn't know your org will create one more duplicate. This skill makes the agent search your org first, show what exists, and create something new only when nothing existing can do the job. It **reduces** duplicates; it can't guarantee zero. What it does guarantee is an evidence table a human can audit.
 
-> Status: **0.10** — used in production on one org. Feedback and issues welcome.
+> Status: **0.11** — used in production on one org. Feedback and issues welcome.
 
 ## What it does
 
@@ -33,6 +33,32 @@ python3 $SKILL/scripts/ssot_decisions.py glossary-add "expiry = contract end dat
 ```
 
 They are plain markdown files: review them in PRs like code.
+
+## It watches what happens outside the gate
+
+Most duplicates are created by people in Setup, not by the agent. Every build keeps the previous snapshot, and `ssot_changes.py` compares the two:
+
+| Section | What it flags |
+|---|---|
+| **Possible misses** | A component built by a CREATE decision that looks like one that already existed. The best signal for improving the search |
+| **Possible duplicates** | A new component similar to an existing one: similar label, identical formula (short formulas like `TODAY()` only on the same object), or the same 4+ picklist values that are not all generic, unless both fields share a global value set |
+| **No SSOT check** | Your own new components that no logged decision mentions: custom objects and fields, flows, validation rules, Apex (except test classes), workflow/approval/assignment/duplicate rules, email alerts, permission sets and groups, record types, global value sets, custom labels and named credentials |
+| **Overlap to review** | A new flow on the same object and trigger timing as an existing active one |
+
+```bash
+python3 $SKILL/scripts/ssot_changes.py --save      # report since the last build, kept in ssot-data/changes/
+python3 $SKILL/scripts/ssot_decisions.py stats      # verdict mix and open decisions per month
+```
+
+After every build the builder prints a one-line summary and, when something changed, saves the full report to `ssot-data/changes/<build time>.md`, for example:
+
+```
+Changes since 2026-11-15T09:00: own +12 -1 ~4, managed +3 -0 ~7; 7 of 9 new components have an SSOT check; 2 possible duplicate(s)  (report: ssot-data/changes/2026-11-22T0900.md)
+```
+
+Schedule a weekly build (cron, or Claude Code's `/schedule`) to get it regularly. Managed-package changes are counted but hidden (`--managed` shows them). Reports, dashboards, email templates, profiles and queues are counted but not gated, since people create them routinely.
+
+It is safe when something fails: builds are written to a staging folder and swapped in only when complete, so an interrupted build never damages the inventory or its baseline. A file whose query failed (an empty or partial CSV) is skipped and named instead of showing up as thousands of "removed" components. `changes/` is git-ignored by default because the reports name the users who changed components.
 
 Example output in a design:
 
@@ -125,7 +151,8 @@ Tests use fixture CSVs and a fake `sf` layer; they never touch an org. CI runs t
 | `SKILL.md` | The protocol the agent follows |
 | `scripts/build_inventory.py` | Builds the inventory CSVs and XML cache (read-only) |
 | `scripts/ssot_search.py` | Search, `--where-used`, `--freshness` |
-| `scripts/ssot_decisions.py` | Decision log: `add`, `status`, `list`, `glossary-add` |
+| `scripts/ssot_decisions.py` | Decision log: `add`, `status`, `list`, `stats`, `glossary-add` |
+| `scripts/ssot_changes.py` | Change report between the last two builds |
 | `scripts/ssot_common.py` | Shared paths, org resolution and `sf` calls |
 | `references/discovery-queries.md` | Live SOQL per asset type, plus gotchas |
 | `assets/registry-template.md` | Starting point for your `ssot-data/registry.md` |

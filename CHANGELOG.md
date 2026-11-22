@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.11.0 — 2026-11-23
+
+The skill now watches what happens outside the gate.
+
+- Every successful build keeps the previous snapshot in `inventory/previous/` (only when it is the same org). Builds are staged in `inventory/next/` and swapped in only when complete, so an interrupted build never damages the live inventory.
+- New `scripts/ssot_changes.py` compares the last two builds: added, removed and changed components per type, plus
+  - **possible misses:** a component built by a CREATE decision that looks like an existing one;
+  - **possible duplicates:** similar label, identical formula (short formulas only on the same object), or the same 4+ picklist values that are not all generic (fields that share a global value set, read from the XML cache, count as reuse);
+  - **no SSOT check:** new own custom objects and fields, flows, validation rules, Apex (except test classes), workflow/approval/assignment/duplicate rules, email alerts, permission sets and groups, record types, global value sets, custom labels and named credentials that no logged decision mentions (any API name inside backticks in a decision counts);
+  - **overlap to review:** new flows on the same object and trigger timing as existing active ones.
+- Files whose query failed in either build (from build warnings, an empty file, or a mass disappearance) are skipped and named; fields of objects whose describe failed are skipped too.
+- The builder prints a one-line change summary after each build and saves the full report to `ssot-data/changes/<build time>.md` when something changed (git-ignored by default; not searched as docs).
+- Namespace captured for record types, permission set groups, global value sets and named credentials, so package installs are not reported as your own components.
+- `ssot_decisions.py stats`: verdict mix, light checks and open decisions per month.
+
 ## 0.10.0 — 2026-11-22
 
 The skill now learns from every run.

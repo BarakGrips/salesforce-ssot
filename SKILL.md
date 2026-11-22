@@ -4,7 +4,7 @@ description: "Single Source of Truth gate for Salesforce orgs. Before a new fiel
 license: MIT
 compatibility: "Needs a shell, Python 3.9+ (stdlib only) and the Salesforce CLI (sf) authenticated to the target org. Built for Claude Code; works in any agent that can run scripts."
 metadata:
-  version: "0.10.0"
+  version: "0.11.0"
 ---
 
 # SSOT: Search Before You Build
@@ -30,7 +30,8 @@ If the shell may be somewhere else, pass `--data-dir <absolute project path>/sso
 | `ssot-data/cache/metadata/` | Retrieved XML (flows, Apex, objects, workflows, custom metadata, global value sets) for full-text search. Git-ignored. |
 | [scripts/ssot_search.py](scripts/ssot_search.py) | Searches registry, inventory, docs and XML. `--where-used` adds live checks. |
 | [scripts/build_inventory.py](scripts/build_inventory.py) | Builds the inventory and XML cache. Read-only against the org. |
-| [scripts/ssot_decisions.py](scripts/ssot_decisions.py) | Logs checks, updates their status, and adds glossary synonyms. |
+| [scripts/ssot_decisions.py](scripts/ssot_decisions.py) | Logs checks, updates their status, adds glossary synonyms, shows stats. |
+| [scripts/ssot_changes.py](scripts/ssot_changes.py) | Compares the last two builds: possible duplicates, components with no SSOT check, possible misses. |
 | [references/discovery-queries.md](references/discovery-queries.md) | Live SOQL per asset type, plus gotchas. |
 
 **Org choice:** point SSOT checks at **production** metadata (read-only queries and aggregate counts). A sandbox can lag production or hold in-flight work; check one in addition only for in-flight builds. The build uses `--org`, then `$SSOT_ORG`, then the sf default target-org. If the user has not said which org is production, ask before the first build.
@@ -46,6 +47,7 @@ If the shell may be somewhere else, pass `--data-dir <absolute project path>/sso
 
 Run `--freshness`. It prints the inventory age, row counts and build warnings. Also run `ssot_decisions.py list --status proposed`: builds often finish in a later session, so close out any decision that has since been built or dropped.
 - No inventory, or older than 7 days, or the session just deployed metadata: a rebuild is needed. A full build takes a few minutes on a large org. **Ask the user before you start one mid-task.** `--skip-retrieve` refreshes only the CSVs and is faster.
+- After every rebuild the builder prints a one-line change summary. If it shows possible duplicates or new components without an SSOT check, run `ssot_changes.py` and tell the user (see "Changes outside the gate" below).
 - **EMPTY files or build warnings** mean the inventory has gaps. Never claim "doesn't exist" for an affected area; verify live with [references/discovery-queries.md](references/discovery-queries.md).
 
 ## Step 2: Decompose the requirement into needs
@@ -140,6 +142,20 @@ After the build, in the same session:
 - Add or update the row in `ssot-data/registry.md` §1 (concept, canonical source, writer, traps, date). Add to §2 or §4 for a hotspot or a dead component.
 - Make sure new metadata has a Description and Help Text. This keeps future searches accurate.
 - Rebuild the CSVs (`build_inventory.py --skip-retrieve`), or run a full build if flows changed.
+
+## Changes outside the gate
+
+Most duplicates are created in Setup, not through you. Each build keeps the previous snapshot, and `ssot_changes.py` compares the two:
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/ssot_changes.py"          # add --save to keep the report in ssot-data/changes/
+```
+- **Possible misses:** built by a CREATE decision but similar to something that existed. Re-check that decision; it is the most valuable signal for improving searches (add the missing synonym, fix the registry).
+- **Possible duplicates:** a new component similar to an existing one (label, identical formula, or the same 4+ picklist values that are not all generic, unless both share a global value set). Show them to the user; propose a registry §2 hotspot or §4 retirement row when confirmed.
+- **New components without an SSOT check:** own new custom objects and fields, flows, validation rules, Apex (except test classes), workflow/approval/assignment/duplicate rules, email alerts, permission sets and groups, record types, global value sets, custom labels and named credentials that no decision mentions. Offer to log a retroactive decision (verdict as built, `"depth": "light"`) so the history is complete.
+- **Overlap to review:** a new flow on the same object and trigger timing as an existing active one. Not a duplicate by itself; check whether the purposes overlap.
+- **"Not compared" lines** mean a query failed in one of the two builds. Don't read missing rows there as deletions.
+
+Reports, dashboards, email templates, profiles, queues and users are counted but not gated: end users create them routinely. `ssot_decisions.py stats` shows the verdict mix per month; together with the gate coverage line this tells whether the process is working.
 
 ## Common mistakes
 - **Searching only by label.** A field labeled "Partner Tier" can have the API name `Reseller_Level__c`. Search the business term and the API token.

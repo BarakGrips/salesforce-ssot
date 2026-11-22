@@ -11,6 +11,7 @@ Commands (from your project folder):
   ssot_decisions.py status D-2026-11-22-01 superseded --note "by D-2026-12-01-02"
   ssot_decisions.py glossary-add "expiry = contract end date"
   ssot_decisions.py list [--status proposed]
+  ssot_decisions.py stats                      verdict mix and open decisions per month
 
 Decision JSON ("depth" is "full" or "light"; "rejected", "evidence", "request" are optional):
   {"title": "Contract expiry reminder",
@@ -353,6 +354,31 @@ def cmd_glossary_add(p, line):
     print("glossary updated in %s" % rel(path))
 
 
+# ------------------------------------------------------------------ stats
+def cmd_stats(p):
+    """Verdict mix and status per month: is reuse going up, and do decisions get closed?"""
+    months = {}
+    for did, _, block in entries(load(p)):
+        month = did[2:9]
+        m = months.setdefault(month, {"checks": 0, "light": 0, "open": 0, "verdicts": {v: 0 for v in VERDICTS}})
+        m["checks"] += 1
+        m["light"] += 1 if "Depth: light" in block else 0
+        st = re.search(r"^- Status: (\w+)", block, re.M)
+        m["open"] += 1 if st and st.group(1) == "proposed" else 0
+        for v in re.findall(r"^\| [^\n]*? \| (REUSE|DERIVE|EXTEND|REPURPOSE|CREATE) \|", block, re.M):
+            m["verdicts"][v] += 1
+    if not months:
+        print("no decisions logged yet")
+        return
+    print("%-8s %6s %6s %6s  %s" % ("month", "checks", "light", "open", "  ".join("%9s" % v for v in VERDICTS)))
+    for month in sorted(months):
+        m = months[month]
+        total = sum(m["verdicts"].values()) or 1
+        print("%-8s %6d %6d %6d  %s" % (month, m["checks"], m["light"], m["open"], "  ".join(
+            "%4d %3d%%" % (m["verdicts"][v], round(100.0 * m["verdicts"][v] / total)) for v in VERDICTS)))
+    print("\nReuse rate = (REUSE + DERIVE + EXTEND) / all verdicts. Gate coverage: ssot_changes.py")
+
+
 # ------------------------------------------------------------------ list
 def cmd_list(p, status=None):
     for did, title, block in entries(load(p)):
@@ -383,6 +409,7 @@ def main():
     a_gl.add_argument("line")
     a_ls = sub.add_parser("list", parents=[common], help="list decisions")
     a_ls.add_argument("--status", choices=STATUSES)
+    sub.add_parser("stats", parents=[common], help="verdict mix and open decisions per month")
     a = ap.parse_args()
     p = paths(a.data_dir)
     if a.cmd == "add":
@@ -394,6 +421,8 @@ def main():
         cmd_glossary_add(p, a.line)
     elif a.cmd == "list":
         cmd_list(p, a.status)
+    elif a.cmd == "stats":
+        cmd_stats(p)
     else:
         ap.print_help()
 
