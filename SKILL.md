@@ -4,7 +4,7 @@ description: "Single Source of Truth gate for Salesforce orgs. Before a new fiel
 license: MIT
 compatibility: "Needs a shell, Python 3.9+ (stdlib only) and the Salesforce CLI (sf) authenticated to the target org. Built for Claude Code; works in any agent that can run scripts."
 metadata:
-  version: "0.9.0"
+  version: "0.10.0"
 ---
 
 # SSOT: Search Before You Build
@@ -25,10 +25,12 @@ If the shell may be somewhere else, pass `--data-dir <absolute project path>/sso
 | Path | What it is |
 |---|---|
 | `ssot-data/registry.md` | **Registry.** Glossary (§0), concept → canonical component (§1), duplication hotspots, data writers, retirement list, naming conventions. Created from [assets/registry-template.md](assets/registry-template.md) on the first build. Committed to git. |
+| `ssot-data/decisions.md` | **Decision log.** One entry per SSOT check: request, needs, terms searched, verdicts, rejected candidates, status. Searched automatically. Committed to git. |
 | `ssot-data/inventory/*.csv` | Production snapshot: fields (formulas, help text, picklist values, defaults), objects, flows, VRs, Apex, legacy automation, email, access, config, reports. Git-ignored. |
 | `ssot-data/cache/metadata/` | Retrieved XML (flows, Apex, objects, workflows, custom metadata, global value sets) for full-text search. Git-ignored. |
 | [scripts/ssot_search.py](scripts/ssot_search.py) | Searches registry, inventory, docs and XML. `--where-used` adds live checks. |
 | [scripts/build_inventory.py](scripts/build_inventory.py) | Builds the inventory and XML cache. Read-only against the org. |
+| [scripts/ssot_decisions.py](scripts/ssot_decisions.py) | Logs checks, updates their status, and adds glossary synonyms. |
 | [references/discovery-queries.md](references/discovery-queries.md) | Live SOQL per asset type, plus gotchas. |
 
 **Org choice:** point SSOT checks at **production** metadata (read-only queries and aggregate counts). A sandbox can lag production or hold in-flight work; check one in addition only for in-flight builds. The build uses `--org`, then `$SSOT_ORG`, then the sf default target-org. If the user has not said which org is production, ask before the first build.
@@ -37,12 +39,12 @@ If the shell may be somewhere else, pass `--data-dir <absolute project path>/sso
 
 ## Step 0: Pick the depth
 
-- **Light check** for one low-risk change that stores no new data: a picklist value on an existing field, a list view, a report on existing data, a page layout change. Run one search and write a 3-line note: terms searched, best match, verdict.
+- **Light check** for one low-risk change that stores no new data: a picklist value on an existing field, a list view, a report on existing data, a page layout change. Run one search, write a 3-line note (terms searched, best match, verdict), and log it with `"depth": "light"`.
 - **Full check** for everything else: new fields, objects, flows, validation rules, permission sets, integration mappings, notifications, or any request with several parts. Follow Steps 1–6.
 
-## Step 1: Freshness
+## Step 1: Freshness and open decisions
 
-Run `--freshness`. It prints the inventory age, row counts and build warnings.
+Run `--freshness`. It prints the inventory age, row counts and build warnings. Also run `ssot_decisions.py list --status proposed`: builds often finish in a later session, so close out any decision that has since been built or dropped.
 - No inventory, or older than 7 days, or the session just deployed metadata: a rebuild is needed. A full build takes a few minutes on a large org. **Ask the user before you start one mid-task.** `--skip-retrieve` refreshes only the CSVs and is faster.
 - **EMPTY files or build warnings** mean the inventory has gaps. Never claim "doesn't exist" for an affected area; verify live with [references/discovery-queries.md](references/discovery-queries.md).
 
@@ -71,9 +73,10 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/ssot_search.py" "contract end" expiry renew
 
 Read the results in this order. The first strong hit usually decides.
 1. **Registry rows.** A canonical source exists. Use it unless there is evidence it is wrong.
-2. **Inventory.** Fields (label, API name, formula, help text, picklist values), flows on the same object, VRs, alerts, permission sets, reports, managed-package fields.
-3. **Docs.** Prior decisions and plans. A need might already be designed.
-4. **XML.** Logic that lives inside a flow or formula without a dedicated field.
+2. **Past decisions.** Someone already checked this concept. Follow the decision, or say in the SSOT Check why it no longer holds (status abandoned, the org changed, new evidence).
+3. **Inventory.** Fields (label, API name, formula, help text, picklist values), flows on the same object, VRs, alerts, permission sets, reports, managed-package fields.
+4. **Docs.** Plans and notes. A need might already be designed.
+5. **XML.** Logic that lives inside a flow or formula without a dedicated field.
 
 ## Step 4: Verify the top candidates live
 
@@ -104,7 +107,7 @@ Stop at the first rung that works:
 
 **A stored copy is sometimes right.** Prefer DERIVE, but store a value (and name its writer and sync owner) when you need: a point-in-time snapshot (amount at close), criteria for sharing, matching or duplicate rules, a roll-up of a cross-object formula, an indexed or selective filter on a large object, or field history tracking.
 
-## Step 6: Report, then register
+## Step 6: Report, log, then register
 
 Put this section in the design, before the solution. The rows are an **illustrative format example**, not facts about any org.
 
@@ -121,7 +124,19 @@ Inventory: <org>, built <date> (<n> days old), <warnings: none | list> · Search
 ```
 A "none found" verdict must list the terms searched and the near-misses rejected.
 
+**Log every check**, light or full, right after you report it. Pipe the decision JSON to the logger (format: `ssot_decisions.py --help`; in PowerShell, write a temp file and pass its path instead of `-`):
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/ssot_decisions.py" add - <<'EOF'
+{"title": "Contract expiry reminder", "request": "Notify the CSM 60 days before a contract ends", "depth": "full",
+ "needs": [{"need": "Store contract end date", "terms": ["contract end", "expiry"], "verdict": "REUSE",
+            "component": "Contract.EndDate", "evidence": "88% populated",
+            "rejected": [{"component": "Opportunity.Contract_End_Date__c", "reason": "formula copy"}]}]}
+EOF
+```
+Each need carries `need`, `terms`, `verdict`, `component`, `evidence` and `rejected` (component + reason). The logger prints the entry Id (`D-<date>-<n>`) and may suggest **glossary lines** for search terms that did not match the component you chose. Ask the user, then add each approved one with `ssot_decisions.py glossary-add "<line>"`. This is how the search learns your org's vocabulary.
+
 After the build, in the same session:
+- Mark the decision: `ssot_decisions.py status <Id> built --components <what you built>`, or `abandoned --note "<why>"`, or `superseded --note "by <new Id>"` when a later decision replaces it.
 - Add or update the row in `ssot-data/registry.md` §1 (concept, canonical source, writer, traps, date). Add to §2 or §4 for a hotspot or a dead component.
 - Make sure new metadata has a Description and Help Text. This keeps future searches accurate.
 - Rebuild the CSVs (`build_inventory.py --skip-retrieve`), or run a full build if flows changed.

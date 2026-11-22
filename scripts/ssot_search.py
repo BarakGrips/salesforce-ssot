@@ -4,9 +4,10 @@ SSOT search: find existing org assets before designing or building anything new.
 
 Searches, in one pass:
   1. <data>/registry.md        (canonical-source registry - strongest signal)
-  2. <data>/inventory/*.csv    (fields, flows, VRs, Apex, email, access, config, reports)
-  3. markdown in <data> and $SSOT_DOCS_DIRS (prior decisions, plans, runbooks)
-  4. <data>/cache/metadata/**  (retrieved XML - full-text "where used")
+  2. <data>/decisions.md       (past SSOT checks: what was chosen and rejected, and why)
+  3. <data>/inventory/*.csv    (fields, flows, VRs, Apex, email, access, config, reports)
+  4. markdown in <data> and $SSOT_DOCS_DIRS (plans, runbooks, notes)
+  5. <data>/cache/metadata/**  (retrieved XML - full-text "where used")
 
 Matching works on words: case, "_", "-", spaces and camelCase are ignored, and each search
 word must start a word in the text. So `end date` finds `Contract_End_Date__c` and
@@ -27,12 +28,12 @@ import os
 import re
 import sys
 
-from ssot_common import (STALE_DAYS, cache_org, check_api_name, docs_dirs, paths, query, read_csv,
-                         read_json, read_text, rel, require_sf, resolve_org)
+from ssot_common import (DECISION_RE, STALE_DAYS, cache_org, check_api_name, docs_dirs, paths, query,
+                         read_csv, read_json, read_text, rel, require_sf, resolve_org)
 
-# Set in main() from --data-dir / $SSOT_DATA_DIR.
-P = paths()
-REGISTRY, INV, CACHE = P["registry"], P["inventory"], P["xml"]
+# Set in main() (or by an importer) from --data-dir / $SSOT_DATA_DIR. Not resolved at import time,
+# so other scripts can import the matching helpers from any folder.
+P = REGISTRY = INV = CACHE = None
 
 # Columns shown per inventory file (keeps output scannable).
 SHOW = {
@@ -223,8 +224,38 @@ def search_registry(concepts, limit):
             out("  L%-4d %s" % (i, short(line, 220)))
 
 
+def search_decisions(concepts, limit):
+    path = os.path.join(P["data"], "decisions.md")
+    if not os.path.exists(path):
+        return
+    text = read_text(path, errors="replace")
+    ms = list(DECISION_RE.finditer(text))
+    hits = []
+    for i, m in enumerate(ms):
+        block = text[m.start(): ms[i + 1].start() if i + 1 < len(ms) else len(text)]
+        # Score only the content (title, request, need rows, rejections), not Status/Date/Inventory lines
+        content = [m.group(2)] + [l for l in block.splitlines()
+                                  if l.startswith("- Request:") or l.startswith("- Rejected")
+                                  or (l.startswith("| ") and not l.startswith("| Need"))]
+        s = score(words(" ".join(content)), concepts)
+        if not s:
+            continue
+        status = re.search(r"^- Status: (.*)$", block, re.M)
+        rows = [l for l in content[1:] if not l.startswith("- Request:") and score(words(l), concepts)]
+        hits.append((s, m.group(1), m.group(2), status.group(1) if status else "?", rows))
+    if not hits:
+        return
+    hits.sort(key=lambda h: h[1], reverse=True)   # newest first ...
+    hits.sort(key=lambda h: -h[0])                # ... within the same score (stable sort)
+    out("\n## 2. Past decisions (%s) - follow them, or say why they no longer hold" % rel(path))
+    for s, did, title, status, rows in hits[:limit]:
+        out("  %s · %s  [%s]" % (did, short(title.replace("\\|", "|"), 80), short(status, 80)))
+        for l in rows[:4]:
+            out("      " + short(l, 200))
+
+
 def search_inventory(concepts, obj, limit, include_managed):
-    out("\n## 2. Org inventory (%s)" % rel(INV))
+    out("\n## 3. Org inventory (%s)" % rel(INV))
     any_hit = False
     for name in SHOW:
         path = os.path.join(INV, name)
@@ -266,9 +297,10 @@ def search_markdown(concepts, limit):
     files = []
     for r in roots:
         files += glob.glob(os.path.join(r, "**", "*.md"), recursive=True)
-    cache_prefix, registry = os.path.abspath(P["cache"]) + os.sep, os.path.abspath(REGISTRY)
+    cache_prefix = os.path.abspath(P["cache"]) + os.sep
+    skip = {os.path.abspath(REGISTRY), os.path.abspath(os.path.join(P["data"], "decisions.md"))}
     files = [os.path.abspath(f) for f in files]
-    files = [f for f in files if not f.startswith(cache_prefix) and f != registry]
+    files = [f for f in files if not f.startswith(cache_prefix) and f not in skip]
     results = []
     for f in sorted(set(files)):
         try:
@@ -283,7 +315,7 @@ def search_markdown(concepts, limit):
     if not results:
         return
     results.sort(key=lambda r: (-r[0], -r[1]))
-    out("\n## 3. Docs (prior decisions, sessions, plans)")
+    out("\n## 4. Docs (plans, sessions, notes)")
     for best, n, f, hits in results[:limit]:
         out("  %s  (%d line(s))" % (rel(f), n))
         for s, i, l in hits:
@@ -316,7 +348,7 @@ def search_cache(concepts, limit):
     if not results:
         return
     results.sort(key=lambda r: (-r[0], -r[1]))
-    out("\n## 4. Metadata XML full-text (%s) - %d file(s)" % (rel(CACHE), len(results)))
+    out("\n## 5. Metadata XML full-text (%s) - %d file(s)" % (rel(CACHE), len(results)))
     for m, c, p in results[:limit]:
         out("  [%d terms, %d hits] %s" % (m, c, os.path.relpath(p, CACHE)))
 
@@ -569,6 +601,7 @@ def main():
             desc.append(repr(c[0].text) + (" (+ %s)" % ", ".join(syn) if syn else ""))
         out("Terms: %s%s" % ("; ".join(desc), "  object=%s" % a.object if a.object else ""))
         search_registry(concepts, a.limit)
+        search_decisions(concepts, max(3, a.limit // 2))
         search_inventory(concepts, a.object, a.limit, include_managed=not a.no_managed)
         if not a.no_docs:
             search_markdown(concepts, max(3, a.limit // 2))

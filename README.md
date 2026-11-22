@@ -6,7 +6,7 @@ Every org has the same problem. Someone needs a field, can't find one in 30 seco
 
 AI agents make this faster, not better: an agent that doesn't know your org will create one more duplicate. This skill makes the agent search your org first, show what exists, and create something new only when nothing existing can do the job. It **reduces** duplicates; it can't guarantee zero. What it does guarantee is an evidence table a human can audit.
 
-> Status: **0.9** — used in production on one org. Feedback and issues welcome.
+> Status: **0.10** — used in production on one org. Feedback and issues welcome.
 
 ## What it does
 
@@ -14,7 +14,25 @@ AI agents make this faster, not better: an agent that doesn't know your org will
 2. **Splits each request into needs** (data, logic, rule, access, signal, insight, setting) and searches each one. Matching is word-based and camelCase-aware, and synonyms from your registry glossary are added automatically (`partner` also finds `reseller`, `channel`).
 3. **Checks the finalists live**: dependency API references, population (checkbox-aware), recent record activity, and — where field history is tracked — who changed the field in the last 90 days.
 4. **Decides with a reuse ladder**: Reuse → Derive → Extend → Repurpose → Create. Create needs a written rejection reason for every candidate. Extending a permission set or validation rule comes with least-privilege and blast-radius checks.
-5. **Writes an SSOT Check table** into the design (evidence first, solution second) and registers new canonical components in a team registry, so the next search starts smarter.
+5. **Writes an SSOT Check table** into the design (evidence first, solution second), **logs the decision**, and registers new canonical components in a team registry, so the next search starts smarter.
+
+## It learns from every run
+
+Claude doesn't remember between sessions, so the skill keeps its memory in files the next run reads:
+
+| File | What it remembers | How it's used |
+|---|---|---|
+| `ssot-data/decisions.md` | Every SSOT check: request, needs, terms searched, verdicts, rejected candidates and status (proposed / built / abandoned) | Searched first after the registry. A past decision on the same concept shows up, and the agent must follow it or explain why it no longer holds |
+| Registry glossary (§0) | Your org's vocabulary | After each check, search terms that didn't match the chosen component become **suggested synonyms** (`expiry = contract end date`). Once approved, every future search uses them |
+| Registry §1 | Concept → canonical component | Strongest search signal |
+
+```bash
+python3 $SKILL/scripts/ssot_decisions.py list                       # all decisions and their status
+python3 $SKILL/scripts/ssot_decisions.py status D-2026-11-22-01 built --components Contract.EndDate
+python3 $SKILL/scripts/ssot_decisions.py glossary-add "expiry = contract end date"
+```
+
+They are plain markdown files: review them in PRs like code.
 
 Example output in a design:
 
@@ -82,7 +100,7 @@ Don't use a dot-prefixed data folder (such as `.ssot`): `sf project retrieve` ha
 ## Safety and privacy
 
 - **Read-only.** The scripts run SOQL and Tooling API queries, `sf sobject describe` and `sf project retrieve`. They never deploy metadata or change records. The only network calls are `sf` calls to your own org.
-- **The snapshot stays out of git.** `ssot-data/.gitignore` excludes `inventory/` and `cache/`: they hold your org's metadata (formulas, email subjects, integration usernames, named-credential endpoints). Commit only `registry.md`, and only to a repository you control.
+- **The snapshot stays out of git.** `ssot-data/.gitignore` excludes `inventory/` and `cache/`: they hold your org's metadata (formulas, email subjects, integration usernames, named-credential endpoints). Commit `registry.md` and `decisions.md` (they describe your business requirements), and only to a repository you control.
 - **What reaches the model:** only the search results the agent prints (capped per search), not whole files. The inventory's user list holds only active internal integration and automation users, never portal, community or guest users. `--where-used` shows the names of whoever changed a field (from field history), which can include any user type.
 - `--where-used` runs aggregate `COUNT()` queries on the object you name. On very large objects these can be slow; run them off-peak.
 
@@ -107,6 +125,7 @@ Tests use fixture CSVs and a fake `sf` layer; they never touch an org. CI runs t
 | `SKILL.md` | The protocol the agent follows |
 | `scripts/build_inventory.py` | Builds the inventory CSVs and XML cache (read-only) |
 | `scripts/ssot_search.py` | Search, `--where-used`, `--freshness` |
+| `scripts/ssot_decisions.py` | Decision log: `add`, `status`, `list`, `glossary-add` |
 | `scripts/ssot_common.py` | Shared paths, org resolution and `sf` calls |
 | `references/discovery-queries.md` | Live SOQL per asset type, plus gotchas |
 | `assets/registry-template.md` | Starting point for your `ssot-data/registry.md` |

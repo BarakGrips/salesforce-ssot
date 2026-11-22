@@ -106,7 +106,7 @@ class Search(unittest.TestCase):
         self.assertIn("EMPTY: reports", out)
 
     def test_xml_searched_when_cache_matches_org(self):
-        self.assertIn("## 4. Metadata XML", run(self.d, "reseller", "--no-docs"))
+        self.assertIn("## 5. Metadata XML", run(self.d, "reseller", "--no-docs"))
 
     def test_output_cap(self):
         out = run(self.d, "renewal", "end", "partner", "--max-chars", "300")
@@ -119,7 +119,7 @@ class CacheFromOtherOrg(unittest.TestCase):
             d = make_data_dir(tmp, org="prod", cache_org="sandbox")
             out = run(d, "reseller", "--no-docs")
             self.assertIn("XML cache came from org 'sandbox'", out)
-            self.assertNotIn("## 4. Metadata XML", out)
+            self.assertNotIn("## 5. Metadata XML", out)
 
 
 class FakeOrg:

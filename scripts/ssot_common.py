@@ -27,6 +27,7 @@ STALE_DAYS = 7
 DATA_DIR_NAME = "ssot-data"
 CACHE_MARKER = ".ssot-cache"   # in <data>/cache; holds the org the XML came from
 API_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+DECISION_RE = re.compile(r"^## (D-\d{4}-\d{2}-\d{2}-\d{2,}) · (.*)$", re.M)   # decision log entry heading
 
 # Windows pipes default to a legacy code page; keep non-ASCII output from crashing.
 for _stream in (sys.stdout, sys.stderr):
