@@ -100,13 +100,21 @@ def stem(w):
 
 
 class Term:
-    """One search phrase. Each of its words must start a word in the text, in order."""
+    """One search phrase. Each of its words must start a word in the text, in order.
+    Words of 1-2 characters (SE, DR, AE) must match a whole word, or they would match half the org."""
 
     def __init__(self, text, via=None):
         self.text, self.via = text, via
         toks = [stem(w) for w in words(text).split()]
         self.key = " ".join(toks)
-        self.rx = re.compile(r"(?:^| )" + r"[^ ]* ".join(re.escape(t) for t in toks)) if toks else None
+        pieces = []
+        for i, t in enumerate(toks):
+            last = i == len(toks) - 1
+            if len(t) <= 2:
+                pieces.append(re.escape(t) + ("(?= |$)" if last else " "))
+            else:
+                pieces.append(re.escape(t) + ("" if last else "[^ ]* "))
+        self.rx = re.compile(r"(?:^| )" + "".join(pieces)) if toks else None
 
     def hits(self, normed):
         return len(self.rx.findall(normed)) if self.rx else 0

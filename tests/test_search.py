@@ -37,6 +37,14 @@ class Matching(unittest.TestCase):
         self.assertGreater(S.Term("end date").hits(S.words("ContractEndDateReminder")), 0)
         self.assertEqual(S.Term("date end").hits(S.words("ContractEndDateReminder")), 0)
 
+    def test_short_words_match_whole_words_only(self):
+        se = S.Term("SE")
+        self.assertEqual(se.hits(S.words("Send settings segment")), 0)
+        self.assertGreater(se.hits(S.words("SE_Owner__c")), 0)
+        self.assertGreater(S.Term("dr status").hits(S.words("DR_Status__c")), 0)
+        self.assertEqual(S.Term("dr status").hits(S.words("Draft_Status__c")), 0)
+        self.assertGreater(S.Term("deal reg").hits(S.words("Deal_Registration__c")), 0)
+
     def test_plural_folding(self):
         self.assertGreater(S.Term("renewals").hits(S.words("Renewal_Term__c")), 0)
         self.assertGreater(S.Term("opportunities").hits(S.words("Opportunity")), 0)

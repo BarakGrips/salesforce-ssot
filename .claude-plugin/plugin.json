@@ -1,6 +1,6 @@
 {
   "name": "salesforce-ssot",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Single Source of Truth gate for Salesforce: searches existing fields, flows, rules, reports and integration data before anything new is built, then decides Reuse / Derive / Extend / Repurpose / Create with evidence.",
   "author": {
     "name": "Barak Vanunu"

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.2 — 2026-11-23
+
+- Search words of 1–2 characters (SE, DR, AE) now match whole words only. Before, a glossary line like `SE = solutions engineer` made every such search match "send", "settings" and "segment".
+
 ## 0.11.1 — 2026-11-23
 
 - Decision log headings parse with any separator character, so an editor that re-encodes "·" (e.g. cp1252 on Windows) can no longer make entries invisible. Fixes the Windows CI failure in 0.11.0.

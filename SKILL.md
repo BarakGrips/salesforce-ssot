@@ -4,7 +4,7 @@ description: "Single Source of Truth gate for Salesforce orgs. Before a new fiel
 license: MIT
 compatibility: "Needs a shell, Python 3.9+ (stdlib only) and the Salesforce CLI (sf) authenticated to the target org. Built for Claude Code; works in any agent that can run scripts."
 metadata:
-  version: "0.11.1"
+  version: "0.11.2"
 ---
 
 # SSOT: Search Before You Build
