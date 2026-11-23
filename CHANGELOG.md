@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.1 — 2026-11-23
+
+- Decision log headings parse with any separator character, so an editor that re-encodes "·" (e.g. cp1252 on Windows) can no longer make entries invisible. Fixes the Windows CI failure in 0.11.0.
+- The builder refuses to replace a snapshot with a different org picked up from the sf default org (often a sandbox); pass `--org` to switch on purpose.
+- Docs search resolves symlinks, so a data folder or registry linked into a docs folder is listed once.
+
 ## 0.11.0 — 2026-11-23
 
 The skill now watches what happens outside the gate.

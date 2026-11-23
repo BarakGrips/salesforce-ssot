@@ -161,3 +161,11 @@ class Cli(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeadingSeparator(unittest.TestCase):
+    def test_reencoded_separator_still_parses(self):
+        for sep in ("·", "�", "-", "|", ":", ""):
+            text = "## D-2026-11-20-01 %s Contract reminder\n- Status: proposed\n" % sep
+            self.assertEqual([(i, t) for i, t, _ in D.entries(text)], [("D-2026-11-20-01", "Contract reminder")],
+                             msg=repr(sep))

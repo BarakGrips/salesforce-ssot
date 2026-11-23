@@ -297,10 +297,11 @@ def search_markdown(concepts, limit):
     files = []
     for r in roots:
         files += glob.glob(os.path.join(r, "**", "*.md"), recursive=True)
-    cache_prefix = os.path.abspath(P["cache"]) + os.sep
-    changes_prefix = os.path.abspath(os.path.join(P["data"], "changes")) + os.sep
-    skip = {os.path.abspath(REGISTRY), os.path.abspath(os.path.join(P["data"], "decisions.md"))}
-    files = [os.path.abspath(f) for f in files]
+    # realpath: the data folder or the registry may be symlinks into a docs folder; list each file once
+    cache_prefix = os.path.realpath(P["cache"]) + os.sep
+    changes_prefix = os.path.realpath(os.path.join(P["data"], "changes")) + os.sep
+    skip = {os.path.realpath(REGISTRY), os.path.realpath(os.path.join(P["data"], "decisions.md"))}
+    files = [os.path.realpath(f) for f in files]
     files = [f for f in files if not f.startswith(cache_prefix) and not f.startswith(changes_prefix)
              and f not in skip]
     results = []

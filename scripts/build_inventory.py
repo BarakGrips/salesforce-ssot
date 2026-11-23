@@ -531,8 +531,16 @@ def main():
     if a.init:
         return
     require_sf()
+    explicit = bool(a.org or os.environ.get("SSOT_ORG"))
     a.org = resolve_org(a.org)
     a.out = p["inventory"]
+    prev_meta = os.path.join(a.out, "_meta.json")
+    if not explicit and os.path.exists(prev_meta):
+        built_from = read_json(prev_meta).get("org")
+        if built_from and built_from != a.org:
+            # The sf default org is often a sandbox: never replace a production snapshot by accident.
+            sys.exit("The inventory was built from org %r, but the sf default org is %r. Pass --org %s to "
+                     "rebuild it, or --org %s to switch orgs on purpose." % (built_from, a.org, built_from, a.org))
     a.cache = p["cache"]
     if a.retrieve_only:
         meta_path = os.path.join(a.out, "_meta.json")

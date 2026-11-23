@@ -92,7 +92,7 @@ class DecisionMatching(unittest.TestCase):
     def test_tokens_inside_backticks_and_activity(self):
         with tempfile.TemporaryDirectory() as tmp:
             p, inv, prev = baseline(tmp)
-            with open(os.path.join(p["data"], "decisions.md"), "w") as fh:
+            with open(os.path.join(p["data"], "decisions.md"), "w", encoding="utf-8") as fh:
                 fh.write("# log\n\n## D-2026-11-20-01 · t\n- Status: built (2026-11-21): "
                          "`Account.Health_Score__c (new number field)`, `Flow: Health_Rollup`, `Region__c`, "
                          "`Activity.Call_Kind__c`\n")
@@ -156,3 +156,37 @@ class Reports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrgSwitchGuard(unittest.TestCase):
+    def test_default_org_cannot_replace_another_orgs_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = make_data_dir(tmp, org="prod")
+            env = {k: v for k, v in os.environ.items() if k != "SSOT_ORG"}
+            with mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(B, "require_sf"), \
+                    mock.patch.object(B, "resolve_org", return_value="sandbox"), \
+                    mock.patch("sys.argv", ["build_inventory.py", "--data-dir", d]), \
+                    redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                    B.main()
+            self.assertIn("Pass --org prod", str(cm.exception))
+
+
+class SymlinkedDataDir(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "symlinks need extra rights on Windows")
+    def test_docs_listed_once_through_symlinks(self):
+        from test_search import run
+        with tempfile.TemporaryDirectory() as tmp:
+            real = os.path.join(tmp, "knowledge", "ssot")
+            os.makedirs(os.path.dirname(real))
+            d = make_data_dir(os.path.dirname(real))           # tmp/knowledge/ssot-data
+            os.rename(d, real)
+            os.rename(os.path.join(real, "registry.md"), os.path.join(real, "INDEX.md"))
+            os.symlink("INDEX.md", os.path.join(real, "registry.md"))
+            os.symlink(real, os.path.join(tmp, "ssot-data"))
+            with open(os.path.join(tmp, "knowledge", "note.md"), "w") as fh:
+                fh.write("Reseller decision notes\n")
+            out = run(os.path.join(tmp, "ssot-data"), "reseller", "--no-cache")
+            self.assertEqual(out.count("note.md"), 1)
+            self.assertNotIn("INDEX.md", out.split("## 4. Docs")[-1] if "## 4. Docs" in out else "")

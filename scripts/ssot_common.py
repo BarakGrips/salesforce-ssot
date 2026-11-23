@@ -27,7 +27,9 @@ STALE_DAYS = 7
 DATA_DIR_NAME = "ssot-data"
 CACHE_MARKER = ".ssot-cache"   # in <data>/cache; holds the org the XML came from
 API_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
-DECISION_RE = re.compile(r"^## (D-\d{4}-\d{2}-\d{2}-\d{2,}) · (.*)$", re.M)   # decision log entry heading
+# Decision log entry heading: "## D-2026-11-22-01 · Title". Any single punctuation character is accepted as
+# the separator, so an editor that re-encodes "·" (e.g. to cp1252 or U+FFFD) can't make entries vanish.
+DECISION_RE = re.compile(r"^## (D-\d{4}-\d{2}-\d{2}-\d{2,})[ \t]*[^\w\s]?[ \t]*(.*)$", re.M)
 
 # Windows pipes default to a legacy code page; keep non-ASCII output from crashing.
 for _stream in (sys.stdout, sys.stderr):
