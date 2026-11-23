@@ -102,10 +102,10 @@ class Status(Base):
 class Glossary(Base):
     def test_merge_into_existing_group(self):
         with redirect_stdout(io.StringIO()):
-            D.cmd_glossary_add(self.p, "channel = alliance")
+            D.cmd_glossary_add(self.p, "channel = affiliate")
         text = C.read_text(self.p["registry"])
-        self.assertIn("- partner = reseller = channel = alliance", text)
-        self.assertNotIn("- channel = alliance", text)
+        self.assertIn("- partner = reseller = channel = affiliate", text)
+        self.assertNotIn("- channel = affiliate", text)
 
     def test_new_group_added_inside_section_zero(self):
         with redirect_stdout(io.StringIO()):

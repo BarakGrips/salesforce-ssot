@@ -55,8 +55,8 @@ CSVS = {
              "", "", "", "", ""],
             ["ContractEndDateReminder", "Contract End Date Reminder", "True", "AutoLaunchedFlow", "Scheduled",
              "Contract", "", "", "", "", "", "Contract"],
-            ["Use_Case_Renewal_After_Save", "Use Case | Renewal", "True", "AutoLaunchedFlow", "RecordAfterSave",
-             "Use_Case__c", "Update", "", "", "", "", "Use Case"],
+            ["Project_Renewal_After_Save", "Project | Renewal", "True", "AutoLaunchedFlow", "RecordAfterSave",
+             "Project__c", "Update", "", "", "", "", "Project"],
         ]),
     "apex.csv": (
         ["kind", "name", "object", "status", "namespace", "last_modified"],

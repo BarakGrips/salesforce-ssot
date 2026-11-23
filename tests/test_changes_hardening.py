@@ -35,7 +35,7 @@ class CrashSafety(unittest.TestCase):
             before = sorted(os.listdir(inv))
             with mock.patch.object(B, "build_objects", return_value=([], {}, [])), \
                     mock.patch.object(B, "build_fields", side_effect=KeyboardInterrupt), \
-                    mock.patch.object(B, "require_sf"), \
+                    mock.patch.object(B, "require_sf"), mock.patch.object(B, "preflight"), \
                     mock.patch("sys.argv", ["build_inventory.py", "--org", "prod", "--data-dir", d]), \
                     redirect_stdout(io.StringIO()):
                 with self.assertRaises(KeyboardInterrupt):

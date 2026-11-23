@@ -112,7 +112,7 @@ class Suggestions(Base):
 
     def test_guardrails(self):
         sugg = D.glossary_suggestions(self.p, self.need(
-            ["of", "a b", "Deal_Registration__c", "dealReg", "Opportunity.Amount", "expiry"]))
+            ["of", "a b", "Work_Order__c", "workOrder", "Opportunity.Amount", "expiry"]))
         self.assertEqual(sugg, ["expiry = contract end date"])
 
     def test_generic_label_gets_no_suggestion(self):
@@ -138,8 +138,8 @@ class GlossaryBridging(Base):
     def test_merge_announces_the_whole_group(self):
         buf = io.StringIO()
         with redirect_stdout(buf):
-            D.cmd_glossary_add(self.p, "channel = alliance")
-        self.assertIn("partner = reseller = channel = alliance", buf.getvalue())
+            D.cmd_glossary_add(self.p, "channel = affiliate")
+        self.assertIn("partner = reseller = channel = affiliate", buf.getvalue())
 
 
 class Cli(Base):

@@ -161,24 +161,24 @@ class Changes(unittest.TestCase):
 
 class Similarity(unittest.TestCase):
     def test_flow_with_same_trigger_and_similar_name_is_duplicate(self):
-        new = {"api_name": "Opportunity_No_Activity_Scheduled_Weekly_2", "label": "Opportunity - No Activity | Weekly",
-               "trigger_object": "Opportunity", "trigger_type": "Scheduled"}
-        old = {"api_name": "Opportunity_No_Activity_Scheduled_Weekly", "label": "Opportunity - No Activity | Weekly",
-               "trigger_object": "Opportunity", "trigger_type": "Scheduled"}
+        new = {"api_name": "Case_Stale_Reminder_Scheduled_Weekly_2", "label": "Case | Stale Reminder | Weekly",
+               "trigger_object": "Case", "trigger_type": "Scheduled"}
+        old = {"api_name": "Case_Stale_Reminder_Scheduled_Weekly", "label": "Case | Stale Reminder | Weekly",
+               "trigger_object": "Case", "trigger_type": "Scheduled"}
         hits = X.similar("flows.csv", new, [old])
         self.assertEqual(hits[0][3], "dup")
 
     def test_shared_global_value_set_is_reuse(self):
         vals = "Acme; Globex; Initech; Umbrella"
-        new = field("Call__c", "Competitors__c", "Competitors Named")
-        old = field("Opportunity", "Competitors__c", "Competitors")
+        new = field("Feedback__c", "Product_Areas__c", "Product Areas")
+        old = field("Case", "Product_Area__c", "Product Area")
         new["picklist_values"] = old["picklist_values"] = vals
-        self.assertEqual(X.similar("fields.csv", new, [old], lambda r: "Competitor"), [])
+        self.assertEqual(X.similar("fields.csv", new, [old], lambda r: "Product_Area"), [])
         hits = X.similar("fields.csv", new, [old], lambda r: None)
         self.assertIn("fine if both use one global value set", hits[0][2])
 
     def test_generic_or_short_picklists_ignored(self):
-        new = field("A__c", "Confidence__c", "Confidence")
+        new = field("A__c", "Priority__c", "Priority")
         old = field("Opportunity", "Criticality__c", "How critical")
         new["picklist_values"] = old["picklist_values"] = "High; Medium; Low"
         self.assertEqual(X.similar("fields.csv", new, [old]), [])

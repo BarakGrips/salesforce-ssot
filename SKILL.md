@@ -4,7 +4,7 @@ description: "Single Source of Truth gate for Salesforce orgs. Before a new fiel
 license: MIT
 compatibility: "Needs a shell, Python 3.9+ (stdlib only) and the Salesforce CLI (sf) authenticated to the target org. Built for Claude Code; works in any agent that can run scripts."
 metadata:
-  version: "0.11.2"
+  version: "0.12.0"
 ---
 
 # SSOT: Search Before You Build
@@ -46,7 +46,7 @@ If the shell may be somewhere else, pass `--data-dir <absolute project path>/sso
 ## Step 1: Freshness and open decisions
 
 Run `--freshness`. It prints the inventory age, row counts and build warnings. Also run `ssot_decisions.py list --status proposed`: builds often finish in a later session, so close out any decision that has since been built or dropped.
-- No inventory, or older than 7 days, or the session just deployed metadata: a rebuild is needed. A full build takes a few minutes on a large org. **Ask the user before you start one mid-task.** `--skip-retrieve` refreshes only the CSVs and is faster.
+- No inventory, or older than 7 days, or the session just deployed metadata: a rebuild is needed. Exit code 1 means the build failed and nothing changed (often an expired login: `sf org login web`); 2 means it was built with warnings. A full build takes a few minutes on a large org. **Ask the user before you start one mid-task.** `--skip-retrieve` refreshes only the CSVs and is faster.
 - After every rebuild the builder prints a one-line change summary. If it shows possible duplicates or new components without an SSOT check, run `ssot_changes.py` and tell the user (see "Changes outside the gate" below).
 - **EMPTY files or build warnings** mean the inventory has gaps. Never claim "doesn't exist" for an affected area; verify live with [references/discovery-queries.md](references/discovery-queries.md).
 
@@ -132,7 +132,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/ssot_decisions.py" add - <<'EOF'
 {"title": "Contract expiry reminder", "request": "Notify the CSM 60 days before a contract ends", "depth": "full",
  "needs": [{"need": "Store contract end date", "terms": ["contract end", "expiry"], "verdict": "REUSE",
             "component": "Contract.EndDate", "evidence": "88% populated",
-            "rejected": [{"component": "Opportunity.Contract_End_Date__c", "reason": "formula copy"}]}]}
+            "rejected": [{"component": "Account.Contract_Expiry__c", "reason": "stale copy on Account"}]}]}
 EOF
 ```
 Each need carries `need`, `terms`, `verdict`, `component`, `evidence` and `rejected` (component + reason). The logger prints the entry Id (`D-<date>-<n>`) and may suggest **glossary lines** for search terms that did not match the component you chose. Ask the user, then add each approved one with `ssot_decisions.py glossary-add "<line>"`. This is how the search learns your org's vocabulary.

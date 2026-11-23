@@ -10,13 +10,13 @@ Searches, in one pass:
   5. <data>/cache/metadata/**  (retrieved XML - full-text "where used")
 
 Matching works on words: case, "_", "-", spaces and camelCase are ignored, and each search
-word must start a word in the text. So `end date` finds `Contract_End_Date__c` and
+word must start a word in the text. So `end date` finds `Project_End_Date__c` and
 `ContractEndDate`, but `end` does not match `Vendor`. A trailing plural "s" is ignored.
 Quote a phrase to keep its words together and in order. Synonyms from the registry
 glossary (section 0, lines like "- partner = reseller = channel") are added automatically.
 
 Usage (from your project folder):
-  python3 <skill>/scripts/ssot_search.py partner "deal reg" reseller
+  python3 <skill>/scripts/ssot_search.py customer "work order" client
   python3 <skill>/scripts/ssot_search.py renewal --object Opportunity
   python3 <skill>/scripts/ssot_search.py --where-used Opportunity.Expected_Go_Live__c
   python3 <skill>/scripts/ssot_search.py --freshness
@@ -202,7 +202,8 @@ def freshness(quiet=False):
     if counts:
         out("Rows: " + " · ".join("%s %s" % (k, v) for k, v in counts.items()))
     if empty:
-        out("!! EMPTY: %s - absence in these files proves nothing (see warnings)" % ", ".join(empty))
+        out("!! EMPTY: %s - %s" % (", ".join(empty), "a query may have failed; absence there proves nothing (see "
+                                    "warnings)" if warnings else "no rows in the org (no build warnings)"))
     if warnings:
         out("!! %d build warning(s) - the inventory has gaps; don't claim absence in an affected area:" % len(warnings))
         for w in warnings[:5]:
@@ -406,8 +407,18 @@ def where_used(target, org, limit):
     out("# Where used: %s.%s (org %s)" % (obj, field, org))
     out("Counts and history respect sharing: run as a user with View All Data, or they undercount.")
 
-    # 1. Inventory definition
+    # 1. Inventory definition (and a live existence check when the inventory doesn't know the field)
     fdef, same_name = field_def(obj, field)
+    if not fdef:
+        try:
+            exists = sf_query(org, "SELECT QualifiedApiName FROM FieldDefinition WHERE EntityDefinition."
+                                   "QualifiedApiName = '%s' AND QualifiedApiName = '%s'" % (obj, field)).get("records")
+        except Exception:
+            exists = None   # can't tell: carry on with the other checks
+        if exists == []:
+            out("\nNot found: %s has no field %s in org %s. Check the spelling and the object name." % (obj, field, org))
+            out.finish()
+            sys.exit(1)
     ftype = (fdef or {}).get("type", "")
     if fdef:
         out("\nDefinition: label=%r type=%s ref=%s formula=%s default=%s help=%s desc=%s" % (
@@ -591,7 +602,8 @@ def main():
     out = Out(a.max_chars)
     try:
         if a.freshness:
-            freshness()
+            if not freshness():
+                sys.exit(1)
             return
         if a.where_used:
             meta = freshness(quiet=True)
@@ -601,7 +613,7 @@ def main():
             return
         if not a.terms:
             ap.error("give search terms, --where-used, or --freshness")
-        freshness(quiet=True)
+        meta = freshness(quiet=True)
         glossary = [] if a.no_glossary else load_glossary(REGISTRY)
         concepts = build_concepts([t for t in a.terms if t.strip()], glossary)
         if not concepts:
@@ -618,6 +630,11 @@ def main():
             search_markdown(concepts, max(3, a.limit // 2))
         if not a.no_cache:
             search_cache(concepts, a.limit)
+        if not meta:
+            out("\n!! No inventory: the results above cover only the registry, decisions and docs, and prove "
+                "nothing about what exists in the org. Build the inventory first.")
+            out.finish()
+            sys.exit(1)
     finally:
         out.finish()
 

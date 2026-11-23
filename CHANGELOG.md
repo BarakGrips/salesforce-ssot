@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.0 — 2026-11-23
+
+Ready-to-share release: a final privacy audit and a full ship-readiness review.
+
+- **Safe against expired logins:** the builder checks the org with one query before it touches anything, refuses to promote a build whose core queries (objects, fields) failed or that has no fields or mostly incomplete files, and retrieves XML into `cache-next/`, swapping it in only when files arrived. A failed retrieve keeps the previous cache.
+- **Exit codes for scheduled builds:** 0 clean, 2 built with warnings, 1 failed with nothing changed. `--skip-retrieve` and `--retrieve-only` can no longer be combined.
+- Task/Event custom-field XML is now retrieved (`CustomObject:Activity`), so their definitions and value sets are searchable.
+- A search with no inventory says its results prove nothing and exits 1 (so does `--freshness`). `--where-used` on a field that doesn't exist says "not found" and exits 1.
+- The registry template's glossary examples are inactive until you add them; `glossary-add` places new lines after the section text.
+- Cells are kept up to 4,000 characters (full formulas and picklists), `list` reports an empty log, and the EMPTY note no longer blames failed queries when there are no warnings.
+- README: a Quick start that works as pasted (`SKILL` path, quoting, plugin location, `git clone` install), scheduling with cron/launchd/Task Scheduler instead of cloud agents, exit codes.
+- Test examples no longer resemble any real org's components.
+
 ## 0.11.2 — 2026-11-23
 
 - Search words of 1–2 characters (SE, DR, AE) now match whole words only. Before, a glossary line like `SE = solutions engineer` made every such search match "send", "settings" and "segment".

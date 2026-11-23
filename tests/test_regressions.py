@@ -117,7 +117,8 @@ class SkipRetrieveKeepsCacheWarnings(unittest.TestCase):
                 "warnings": [], "cache_warnings": ["retrieve Flow: timeout"],
                 "counts": {"cached_metadata_files": 99}})
             with mock.patch.object(B, "build_objects", return_value=([], {}, [])), \
-                    mock.patch.object(B, "build_fields", return_value=[]), \
+                    mock.patch.object(B, "build_fields", return_value=[{"object": "Account", "api_name": "X__c"}]), \
+                    mock.patch.object(B, "preflight"), \
                     mock.patch.object(B, "safe_query", return_value=[]), \
                     mock.patch.object(B, "require_sf"), \
                     mock.patch("sys.argv", ["build_inventory.py", "--org", "prod", "--data-dir", d,

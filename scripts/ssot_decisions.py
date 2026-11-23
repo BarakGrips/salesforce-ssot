@@ -20,7 +20,7 @@ Decision JSON ("depth" is "full" or "light"; "rejected", "evidence", "request" a
    "needs": [{"need": "Store contract end date", "terms": ["contract end", "expiry"],
               "verdict": "REUSE", "component": "Contract.EndDate",
               "evidence": "88% populated, read by 2 flows",
-              "rejected": [{"component": "Opportunity.Contract_End_Date__c", "reason": "formula copy"}]}]}
+              "rejected": [{"component": "Account.Contract_Expiry__c", "reason": "stale copy on Account"}]}]}
 
 After `add`, it may suggest glossary lines for business terms that did not match the chosen
 component (the vocabulary gap that made the search harder). Approve them with glossary-add.
@@ -346,8 +346,9 @@ def cmd_glossary_add(p, line):
         lines[i] = "- " + " = ".join(group + added)
         print("merged into an existing group - every word below is now a synonym of every other:")
         print("  " + lines[i].strip())
-    else:
-        last = max([i for i, _ in groups] or [start])
+    else:   # after the last group, or after the section's text when it has no groups yet
+        text_lines = [i for i in range(start + 1, end) if lines[i].strip()]
+        last = max([i for i, _ in groups] or text_lines or [start])
         lines.insert(last + 1, "- " + " = ".join(members))
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lines) + "\n")
@@ -381,6 +382,7 @@ def cmd_stats(p):
 
 # ------------------------------------------------------------------ list
 def cmd_list(p, status=None):
+    shown = 0
     for did, title, block in entries(load(p)):
         m = re.search(r"^- Status: (\w+)", block, re.M)
         st = m.group(1) if m else "?"
@@ -388,6 +390,9 @@ def cmd_list(p, status=None):
             continue
         verdicts = re.findall(r"^\| [^\n]*? \| (REUSE|DERIVE|EXTEND|REPURPOSE|CREATE) \|", block, re.M)
         print("%s  %-10s %s  [%s]" % (did, st, unescape(title), ", ".join(verdicts)))
+        shown += 1
+    if not shown:
+        print("no decisions%s logged yet" % (" with status %s" % status if status else ""))
 
 
 def main():

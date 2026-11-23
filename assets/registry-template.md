@@ -18,11 +18,7 @@ The `salesforce-ssot` skill reads it first in every SSOT check. Update it in the
 ## 0. Glossary (synonyms that hide matches)
 List the words your teams use for the same thing, one group per line, separated by `=`. `ssot_search.py` adds the other words in a group to every search that uses one of them.
 
-- customer = client = account
-- churn = attrition = cancellation
-- trial = pilot = proof of concept
-- region = geo = territory
-- SDR = BDR
+Examples (not active until you add them as `- ` lines, or with `ssot_decisions.py glossary-add`): `partner = reseller = channel`, `churn = attrition = cancellation`, `trial = pilot = proof of concept`, `SDR = BDR`.
 
 ## 1. Concept → canonical component
 

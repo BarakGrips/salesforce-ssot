@@ -25,9 +25,9 @@ Claude doesn't remember between sessions, so the skill keeps its memory in files
 | Registry §1 | Concept → canonical component | Strongest search signal |
 
 ```bash
-python3 $SKILL/scripts/ssot_decisions.py list                       # all decisions and their status
-python3 $SKILL/scripts/ssot_decisions.py status D-2026-11-22-01 built --components Contract.EndDate
-python3 $SKILL/scripts/ssot_decisions.py glossary-add "expiry = contract end date"
+python3 "$SKILL/scripts/ssot_decisions.py" list                       # all decisions and their status
+python3 "$SKILL/scripts/ssot_decisions.py" status D-2026-11-22-01 built --components Contract.EndDate
+python3 "$SKILL/scripts/ssot_decisions.py" glossary-add "expiry = contract end date"
 ```
 
 They are plain markdown files: review them in PRs like code.
@@ -44,8 +44,8 @@ Most duplicates are created by people in Setup, not by the agent. Every build ke
 | **Overlap to review** | A new flow on the same object and trigger timing as an existing active one |
 
 ```bash
-python3 $SKILL/scripts/ssot_changes.py --save      # report since the last build, kept in ssot-data/changes/
-python3 $SKILL/scripts/ssot_decisions.py stats      # verdict mix and open decisions per month
+python3 "$SKILL/scripts/ssot_changes.py" --save      # report since the last build, kept in ssot-data/changes/
+python3 "$SKILL/scripts/ssot_decisions.py" stats      # verdict mix and open decisions per month
 ```
 
 After every build the builder prints a one-line summary and, when something changed, saves the full report to `ssot-data/changes/<build time>.md`, for example:
@@ -54,9 +54,9 @@ After every build the builder prints a one-line summary and, when something chan
 Changes since 2026-11-15T09:00: own +12 -1 ~4, managed +3 -0 ~7; 7 of 9 new components have an SSOT check; 2 possible duplicate(s)  (report: ssot-data/changes/2026-11-22T0900.md)
 ```
 
-Schedule a weekly build (cron, or Claude Code's `/schedule`) to get it regularly. Managed-package changes are counted but hidden (`--managed` shows them). Reports, dashboards, email templates, profiles and queues are counted but not gated, since people create them routinely.
+Schedule a weekly build on a machine where `sf` is logged in (cron, launchd or Windows Task Scheduler; cloud agents have no `sf` login or local data). The exit code tells the scheduler what happened: **0** clean, **2** built with warnings (some data incomplete), **1** failed and nothing was changed. Managed-package changes are counted but hidden (`--managed` shows them). Reports, dashboards, email templates, profiles and queues are counted but not gated, since people create them routinely.
 
-It is safe when something fails: builds are written to a staging folder and swapped in only when complete, so an interrupted build never damages the inventory or its baseline. A file whose query failed (an empty or partial CSV) is skipped and named instead of showing up as thousands of "removed" components. `changes/` is git-ignored by default because the reports name the users who changed components.
+It is safe when something fails. The builder checks the org login before it touches anything, writes to a staging folder, and swaps the result in only when the core queries succeeded, so an expired session or an interrupted build never damages the inventory, its baseline or the XML cache. A file whose query failed (an empty or partial CSV) is skipped and named instead of showing up as thousands of "removed" components. `changes/` is git-ignored by default because the reports name the users who changed components.
 
 Example output in a design:
 
@@ -87,22 +87,28 @@ Why a local snapshot instead of live queries through an MCP server? One fuzzy pa
 /plugin install salesforce-ssot@salesforce-ssot
 ```
 
-**As a plain skill**: copy this folder to `~/.claude/skills/salesforce-ssot/` (all your projects) or to `.claude/skills/salesforce-ssot/` in one project. The folder name must stay `salesforce-ssot`.
+**As a plain skill** (all your projects; use `.claude/skills/` inside a project for one project only):
+```bash
+git clone https://github.com/BarakGrips/salesforce-ssot.git ~/.claude/skills/salesforce-ssot
+```
+The folder name must stay `salesforce-ssot`.
 
 ## Quick start
 
 Run these from your project folder. The data folder `ssot-data/` is created there.
 
 ```bash
-# SKILL = where the skill lives: ~/.claude/skills/salesforce-ssot for a manual install;
-# for a plugin install, ask Claude "where is the salesforce-ssot skill installed?"
-export SSOT_ORG=prod          # or: sf config set target-org prod
+# Where the skill lives. Manual install:
+SKILL="$HOME/.claude/skills/salesforce-ssot"
+# Plugin install: SKILL="$(dirname "$(dirname "$(find ~/.claude/plugins -path '*salesforce-ssot*' -name build_inventory.py | head -1)")")"
 
-python3 $SKILL/scripts/build_inventory.py            # read-only; a few minutes on a large org
-# then fill in ssot-data/registry.md: start with the glossary (§0)
+export SSOT_ORG=prod          # your production org alias (sf org login web --alias prod)
 
-python3 $SKILL/scripts/ssot_search.py "contract end" expiry --object Contract
-python3 $SKILL/scripts/ssot_search.py --where-used Opportunity.Expected_Go_Live__c
+python3 "$SKILL/scripts/build_inventory.py"          # read-only; a few minutes on a large org
+# then open ssot-data/registry.md and add your team's synonyms to the glossary (§0)
+
+python3 "$SKILL/scripts/ssot_search.py" "contract end" expiry --object Contract
+python3 "$SKILL/scripts/ssot_search.py" --where-used Account.Industry
 ```
 
 In practice you rarely run the scripts yourself. Ask Claude for a design ("add a field to track expansion likelihood"). The skill triggers, runs the search, and puts the SSOT Check in its answer. To make the gate mandatory, add one line to your project's `CLAUDE.md`:

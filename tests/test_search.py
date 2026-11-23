@@ -24,14 +24,14 @@ def run(data_dir, *args):
 class Matching(unittest.TestCase):
     def test_words_split_camel_case_and_separators(self):
         self.assertEqual(S.words("ContractEndDateReminder"), "contract end date reminder")
-        self.assertEqual(S.words("Contract_End_Date__c"), "contract end date c")
+        self.assertEqual(S.words("Project_End_Date__c"), "project end date c")
         self.assertEqual(S.words("URLField"), "url field")
 
     def test_word_prefix_not_substring(self):
         end = S.Term("end")
         self.assertEqual(end.hits(S.words("Vendor_Notes__c")), 0)
         self.assertEqual(end.hits(S.words("Pending_Approval__c")), 0)
-        self.assertGreater(end.hits(S.words("Contract_End_Date__c")), 0)
+        self.assertGreater(end.hits(S.words("Project_End_Date__c")), 0)
 
     def test_phrase_matches_camel_case(self):
         self.assertGreater(S.Term("end date").hits(S.words("ContractEndDateReminder")), 0)
@@ -41,9 +41,9 @@ class Matching(unittest.TestCase):
         se = S.Term("SE")
         self.assertEqual(se.hits(S.words("Send settings segment")), 0)
         self.assertGreater(se.hits(S.words("SE_Owner__c")), 0)
-        self.assertGreater(S.Term("dr status").hits(S.words("DR_Status__c")), 0)
-        self.assertEqual(S.Term("dr status").hits(S.words("Draft_Status__c")), 0)
-        self.assertGreater(S.Term("deal reg").hits(S.words("Deal_Registration__c")), 0)
+        self.assertGreater(S.Term("qa status").hits(S.words("QA_Status__c")), 0)
+        self.assertEqual(S.Term("qa status").hits(S.words("Qatar_Status__c")), 0)
+        self.assertGreater(S.Term("work order").hits(S.words("Work_Order_Number__c")), 0)
 
     def test_plural_folding(self):
         self.assertGreater(S.Term("renewals").hits(S.words("Renewal_Term__c")), 0)
@@ -86,11 +86,11 @@ class Search(unittest.TestCase):
         self.assertIn("ContractRenewalService", out)
         self.assertIn("Contract_Renewal_Subflow", out)
         self.assertIn("(no object)", out)
-        self.assertNotIn("Use_Case_Renewal_After_Save", out)
+        self.assertNotIn("Project_Renewal_After_Save", out)
 
     def test_object_filter_matches_label_or_api_name(self):
-        out = run(self.d, "renewal", "--object", "Use_Case__c", "--no-docs")
-        self.assertIn("Use_Case_Renewal_After_Save", out)
+        out = run(self.d, "renewal", "--object", "Project__c", "--no-docs")
+        self.assertIn("Project_Renewal_After_Save", out)
 
     def test_example_registry_rows_ignored(self):
         out = run(self.d, "contract end", "--no-docs")
@@ -217,7 +217,7 @@ class HistoryObject(unittest.TestCase):
     def test_names(self):
         self.assertEqual(S.history_object("Opportunity"), "OpportunityFieldHistory")
         self.assertEqual(S.history_object("Account"), "AccountHistory")
-        self.assertEqual(S.history_object("Use_Case__c"), "Use_Case__History")
+        self.assertEqual(S.history_object("Project__c"), "Project__History")
         self.assertIsNone(S.history_object("Task"))
         self.assertIsNone(S.history_object("Setting__mdt"))
 

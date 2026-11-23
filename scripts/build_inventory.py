@@ -74,7 +74,7 @@ def get(rec, path):
     return "" if cur is None else cur
 
 
-def clean(val, limit=1500):
+def clean(val, limit=4000):   # long enough for a full formula or picklist; ssot_changes compares cells
     if val is None:
         return ""
     s = str(val).replace("\r", " ").replace("\n", " ").strip()
@@ -408,50 +408,64 @@ SFDX_PROJECT = '{"packageDirectories": [{"path": "force-app", "default": true}]}
 def retrieve_cache(org, cache_dir, objects, warnings):
     """Retrieve XML for full-text where-used search into <cache>/metadata.
 
-    `sf project retrieve` only runs inside an SFDX project and only writes inside it, so the
-    cache folder is itself a minimal throwaway SFDX project. It is wiped on every refresh.
+    `sf project retrieve` only runs inside an SFDX project and only writes inside it, so the XML
+    is retrieved into <cache>-next/ (a throwaway SFDX project) and swapped in only when it got
+    files. A failed retrieve keeps the previous cache. Returns the number of files, 0 on failure.
     """
-    target = cache_dir
+    target, nxt = cache_dir, cache_dir.rstrip(os.sep) + "-next"
     std_objects = [o for o in objects if "__" not in o]
+    if "Task" in std_objects or "Event" in std_objects:
+        std_objects.append("Activity")   # Task/Event custom fields are defined on Activity
     items = ["Flow", "ApexClass", "ApexTrigger", "CustomObject", "GlobalValueSet",
              "CustomMetadata", "Workflow"]
-    items += ["CustomObject:%s" % o for o in std_objects]
+    items += ["CustomObject:%s" % o for o in dict.fromkeys(std_objects)]
     if any(part.startswith(".") and part not in (".", "..") for part in target.split(os.sep)):
         print("  ! cache path %s has a dot-prefixed folder; sf retrieve may write nothing there"
               % target, file=sys.stderr)
+    if os.path.isdir(target) and os.listdir(target) and not os.path.exists(os.path.join(target, CACHE_MARKER)):
+        raise SystemExit("Refusing to replace %s: it is not empty and has no %s marker. "
+                         "Pass a different --data-dir or empty it yourself." % (target, CACHE_MARKER))
     print("  retrieving metadata XML into %s ..." % rel(target))
-    if os.path.isdir(target):
-        if not os.path.exists(os.path.join(target, CACHE_MARKER)) and os.listdir(target):
-            raise SystemExit("Refusing to wipe %s: it is not empty and has no %s marker. "
-                             "Pass a different --data-dir or empty it yourself." % (target, CACHE_MARKER))
-        shutil.rmtree(target)
-    os.makedirs(target)
-    with open(os.path.join(target, CACHE_MARKER), "w") as fh:   # first, so a crash leaves a wipeable folder
-        fh.write("")                                             # org is written after a good retrieve
-    os.makedirs(os.path.join(target, "force-app"))
-    with open(os.path.join(target, "sfdx-project.json"), "w") as fh:
+    if os.path.isdir(nxt):
+        shutil.rmtree(nxt)
+    os.makedirs(os.path.join(nxt, "force-app"))
+    with open(os.path.join(nxt, "sfdx-project.json"), "w") as fh:
         fh.write(SFDX_PROJECT)
 
     base = ["project", "retrieve", "start", "-o", org, "--output-dir", "metadata", "--ignore-conflicts"]
     # One call first; fall back to per type so one failing type doesn't lose everything.
     try:
-        sf_json(base + [x for it in items for x in ("--metadata", it)], timeout=1200, cwd=target)
+        sf_json(base + [x for it in items for x in ("--metadata", it)], timeout=1200, cwd=nxt)
     except Exception as exc:
         warnings.append("bulk retrieve failed (%s); retrying per type" % exc)
         for it in items:
             try:
-                sf_json(base + ["--metadata", it], timeout=900, cwd=target)
+                sf_json(base + ["--metadata", it], timeout=900, cwd=nxt)
             except Exception as exc2:
                 warnings.append("retrieve %s: %s" % (it, exc2))
-    xml = os.path.join(target, "metadata")
+    xml = os.path.join(nxt, "metadata")
     count = sum(len(f) for _, _, f in os.walk(xml)) if os.path.isdir(xml) else 0
+    if not count:
+        shutil.rmtree(nxt)
+        warnings.append("XML retrieve returned nothing: kept the previous XML cache")
+        print("  ! XML retrieve returned nothing; kept the previous cache", file=sys.stderr)
+        return 0
+    with open(os.path.join(nxt, CACHE_MARKER), "w") as fh:
+        fh.write(org)
+    if os.path.isdir(target):
+        shutil.rmtree(target)
+    os.replace(nxt, target)
     print("  cached %d metadata files" % count)
-    if count:
-        with open(os.path.join(target, CACHE_MARKER), "w") as fh:
-            fh.write(org)
-    else:
-        warnings.append("XML cache is empty: where-used text search will find nothing")
     return count
+
+
+def preflight(org):
+    """Fail fast, before anything is staged or replaced, when the org can't be queried (expired login)."""
+    try:
+        _query(org, "SELECT Id FROM Organization LIMIT 1")
+    except Exception as exc:
+        sys.exit("Cannot query org %r: %s\nLog in again (sf org login web --alias %s) and retry. "
+                 "Nothing was changed." % (org, str(exc)[:200], org))
 
 
 # ---------------------------------------------------------------- staging and previous snapshot
@@ -521,8 +535,9 @@ def main():
     ap.add_argument("--org", help="org alias or username (default: $SSOT_ORG, then sf default target-org)")
     ap.add_argument("--data-dir", help="data folder (default: $SSOT_DATA_DIR, then the nearest ssot-data folder, "
                                         "then ./ssot-data)")
-    ap.add_argument("--skip-retrieve", action="store_true", help="skip the metadata XML cache refresh")
-    ap.add_argument("--retrieve-only", action="store_true", help="refresh only the metadata XML cache")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--skip-retrieve", action="store_true", help="skip the metadata XML cache refresh")
+    mode.add_argument("--retrieve-only", action="store_true", help="refresh only the metadata XML cache")
     ap.add_argument("--init", action="store_true",
                     help="only create registry.md, decisions.md, .gitignore and .gitattributes, then exit")
     a = ap.parse_args()
@@ -542,6 +557,7 @@ def main():
             sys.exit("The inventory was built from org %r, but the sf default org is %r. Pass --org %s to "
                      "rebuild it, or --org %s to switch orgs on purpose." % (built_from, a.org, built_from, a.org))
     a.cache = p["cache"]
+    preflight(a.org)
     if a.retrieve_only:
         meta_path = os.path.join(a.out, "_meta.json")
         if not os.path.exists(meta_path):
@@ -552,13 +568,16 @@ def main():
                      "Pass --org %s, or run a full build." % (meta.get("org"), a.org, meta.get("org")))
         w = []
         n = retrieve_cache(a.org, a.cache, meta["described_objects"], w)
-        meta["counts"]["cached_metadata_files"] = n
-        meta["cache_refreshed_at"] = dt.datetime.now().isoformat(timespec="seconds") if n else None
-        meta["cache_warnings"] = w   # replaces the previous retrieve's warnings
+        if n:
+            meta["counts"]["cached_metadata_files"] = n
+            meta["cache_refreshed_at"] = dt.datetime.now().isoformat(timespec="seconds")
+            meta["cache_warnings"] = w   # replaces the previous retrieve's warnings
+        else:
+            meta["cache_warnings"] = (meta.get("cache_warnings") or []) + w
         write_json(meta_path, meta)
         for x in w:
             print("  ! " + x)
-        return
+        sys.exit(2 if w else 0)
     os.makedirs(a.out, exist_ok=True)
     stage = os.path.join(a.out, "next")
     if os.path.isdir(stage):
@@ -607,25 +626,34 @@ def main():
                              lambda: build_config(a.org, warnings))
     counts["reports"] = write("reports.csv", ["kind", "name", "label", "folder", "namespace", "detail", "last_run"],
                               lambda: build_reports(a.org, warnings))
+    failed = sorted(set(partial) & {"objects.csv", "fields.csv"})
+    if failed or not counts.get("fields") or len(set(partial)) > len(counts) / 2:
+        shutil.rmtree(stage)
+        for w in warnings:
+            print("  ! " + w, file=sys.stderr)
+        sys.exit("Build failed (%s): the previous inventory was kept unchanged. Check the warnings above, "
+                 "then retry." % (", ".join(failed) + " incomplete" if failed else
+                                  "no fields" if not counts.get("fields") else
+                                  "%d of %d files incomplete" % (len(set(partial)), len(counts))))
     cache_warnings, prev_cache_at = [], None
+    old_meta = os.path.join(a.out, "_meta.json")
+    prev = read_json(old_meta) if os.path.exists(old_meta) else {}
+    retrieved = 0
     if not a.skip_retrieve:
-        counts["cached_metadata_files"] = retrieve_cache(a.org, a.cache, describe, cache_warnings)
-    else:
+        retrieved = retrieve_cache(a.org, a.cache, describe, cache_warnings)
+        if retrieved:
+            counts["cached_metadata_files"] = retrieved
+    if not retrieved and prev.get("org") == a.org:
         # Keep the existing cache's timestamp, size and gaps: the XML was not refreshed.
-        old_meta = os.path.join(a.out, "_meta.json")
-        prev = read_json(old_meta) if os.path.exists(old_meta) else {}
-        if prev.get("org") == a.org:
-            prev_cache_at = prev.get("cache_refreshed_at")
-            cache_warnings = prev.get("cache_warnings") or []
-            if "cached_metadata_files" in (prev.get("counts") or {}):
-                counts["cached_metadata_files"] = prev["counts"]["cached_metadata_files"]
+        prev_cache_at = prev.get("cache_refreshed_at")
+        cache_warnings = (prev.get("cache_warnings") or []) + cache_warnings
+        if "cached_metadata_files" in (prev.get("counts") or {}):
+            counts["cached_metadata_files"] = prev["counts"]["cached_metadata_files"]
     meta = {"built_at": started.isoformat(timespec="seconds"), "org": a.org,
             "duration_sec": int((dt.datetime.now() - started).total_seconds()),
             "counts": counts, "described_objects": describe, "warnings": warnings,
             "partial_files": sorted(set(partial)), "cache_warnings": cache_warnings,
-            "cache_refreshed_at": (started.isoformat(timespec="seconds")
-                                   if not a.skip_retrieve and counts.get("cached_metadata_files")
-                                   else prev_cache_at)}
+            "cache_refreshed_at": started.isoformat(timespec="seconds") if retrieved else prev_cache_at}
     write_json(os.path.join(stage, "_meta.json"), meta)
     promote(a.out, stage, a.org)
     print("done in %ss - %d warning(s)" % (meta["duration_sec"], len(warnings) + len(cache_warnings)))
@@ -643,6 +671,10 @@ def main():
             print(line)
     except Exception as exc:   # the build itself succeeded; the diff is a bonus
         print("(change summary skipped: %s)" % exc)
+    # Exit codes for scheduled builds: 0 clean, 2 built with warnings (gaps), 1 failed (nothing changed).
+    new_cache_warnings = [w for w in cache_warnings if w not in (prev.get("cache_warnings") or [])]
+    if warnings or new_cache_warnings:
+        sys.exit(2)
 
 
 if __name__ == "__main__":
