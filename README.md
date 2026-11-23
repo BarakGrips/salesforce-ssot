@@ -1,20 +1,18 @@
 # salesforce-ssot
 
-**Search before you build.** A Single Source of Truth gate for Salesforce orgs, packaged as an [Agent Skill](https://agentskills.io) for Claude Code.
+**Search before you build.** A Single Source of Truth gate for Salesforce, packaged as an [Agent Skill](https://agentskills.io) for Claude Code.
 
-Every org has the same problem. Someone needs a field, can't find one in 30 seconds, and creates it. A year later there are several territory formulas, several "source" fields, and several flows that send the same email. Reports disagree and automations collide.
+Duplicate fields, formulas and flows are the main source of Salesforce tech debt: reports disagree and automations collide. AI agents create them even faster, because they don't know what already exists in your org.
 
-AI agents make this faster, not better: an agent that doesn't know your org will create one more duplicate. This skill makes the agent search your org first, show what exists, and create something new only when nothing existing can do the job. It **reduces** duplicates; it can't guarantee zero. What it does guarantee is an evidence table a human can audit.
-
-> Status: **0.11** — used in production on one org. Feedback and issues welcome.
+This skill makes the agent search first. It reuses what exists, creates something new only with evidence, and leaves an audit trail for every decision.
 
 ## What it does
 
-1. **Snapshots production metadata** into local CSVs: fields (formulas, help text, picklist values, defaults), objects, flows, validation rules, Apex, legacy automation, email alerts and templates, permission sets, record types, custom metadata, installed packages, reports and dashboards. It also caches flow, Apex, object and workflow XML for full-text search. Your own fields on managed-package objects (for example CPQ) are included.
-2. **Splits each request into needs** (data, logic, rule, access, signal, insight, setting) and searches each one. Matching is word-based and camelCase-aware, and synonyms from your registry glossary are added automatically (`partner` also finds `reseller`, `channel`).
-3. **Checks the finalists live**: dependency API references, population (checkbox-aware), recent record activity, and — where field history is tracked — who changed the field in the last 90 days.
-4. **Decides with a reuse ladder**: Reuse → Derive → Extend → Repurpose → Create. Create needs a written rejection reason for every candidate. Extending a permission set or validation rule comes with least-privilege and blast-radius checks.
-5. **Writes an SSOT Check table** into the design (evidence first, solution second), **logs the decision**, and registers new canonical components in a team registry, so the next search starts smarter.
+1. **Snapshots your org's metadata** (read-only) into local, searchable files.
+2. **Searches before every design**, using your team's own synonyms.
+3. **Verifies the best candidates live**: references, real usage, and who writes each field.
+4. **Decides with a reuse ladder**: Reuse → Derive → Extend → Repurpose → Create. Creating something new requires a reason for rejecting each existing candidate.
+5. **Logs every decision** and adds an evidence table to the design.
 
 ## It learns from every run
 
